@@ -1,7 +1,4 @@
 define(["avalon"], function(avalon) {
-    var History = avalon.History = function() {
-        this.location2hash = {}
-    }
     var proxy
     var defaults = {
         basepath: '/',
@@ -10,6 +7,11 @@ define(["avalon"], function(avalon) {
         interval: 50, //IE6-7,使用轮询，这是其时间时隔
         fireAnchor: true//决定是否将滚动条定位于与hash同ID的元素上
     }
+    var History = avalon.History = function() {
+        this.location2hash = {}
+        this.options = defaults
+    }
+
     var rthimSlant = /^\/+|\/+$/g  // 去最左右两边的斜线
     var rleftSlant = /^\//         //最左的斜线
     var rhashBang = /^#(!)?\//   //匹配/#/ 或 /#!/
@@ -25,19 +27,18 @@ define(["avalon"], function(avalon) {
     var lastIframeHash = ""
     var lastDocumentHash = ""
     var checkerRunning = false
-
+    var oldIE = window.VBArray && History.IEVersion <= 7
     History.prototype = {
         constructor: History,
         start: function(options) {
             if (History.started)
                 throw new Error("avalon.history has already been started")
             History.started = true
-            this.options = avalon.mix({}, defaults, this.options, options)
-
+            this.options = avalon.mix({}, this.options, options)
             //IE6不支持maxHeight, IE7支持XMLHttpRequest, IE8支持window.Element，querySelector, 
             //IE9支持window.Node, window.HTMLElement, IE10不支持条件注释
 
-            var oldIE = window.VBArray && History.IEVersion <= 7
+
             //延迟检测
             this.supportPushState = !!(window.history.pushState)
             this.supportHashChange = !!('onhashchange' in window && (!window.VBArray || !oldIE))
@@ -97,6 +98,7 @@ define(["avalon"], function(avalon) {
                 var router = avalon.router
                 hash = hash.replace(rhashBang, "/")
                 if (router && router.navigate) {
+                    router.setLatelyPath(hash)
                     router.navigate(hash)
                 }
                 if (proxy.options.fireAnchor)
@@ -183,7 +185,7 @@ define(["avalon"], function(avalon) {
         }
     }
 
-
+    //得到页面第一个符合条件的A标签
     function getFirstAnchor(list) {
         for (var i = 0, el; el = list[i++]; ) {
             if (el.nodeName === "A") {
@@ -247,14 +249,16 @@ define(["avalon"], function(avalon) {
 
         var hostname = target.hostname
         if (!hostname) {//fix IE下通过ms-href动态生成href，不存在hostname属性的BUG
-            hostname = target.toString().match(rurl)[2]
-            // var a = document.createElement("a")
-            //  a.href = target + ""
-            //  hostname = a.hostname
+            var fullHref = !oldIE ? target + "" : target.getAttribute("href", 4)
+            hostname = (fullHref.match(rurl) || ["", "", ""])[2]//小心javascript:void(0)
+
         }
         if (hostname === window.location.hostname && History.targetIsThisWindow(target.target)) {
             var path = target.getAttribute("href", 2)
-            if (path.indexOf("#/") === 0) {
+            if (oldIE && path.indexOf("#") !== -1) {
+                path = path.slice(path.indexOf("#"))
+            }
+            if (~path.indexOf("#/") || ~path.indexOf("#!/")) {
                 anchorElement.href = ('/' + proxy.options.basepath + '/').replace(rthimSlant, '/') + path.slice(2)
                 var href = History.getAbsolutePath(anchorElement)
                 event.preventDefault()
